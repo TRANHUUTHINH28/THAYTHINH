@@ -1,0 +1,5 @@
+{
+  "name": "Teacher Assistant Pro",
+  "description": "A comprehensive student evaluation and management tool for high school teachers, integrating seamlessly with Google Sheets via Apps Script.",
+  "requestFramePermissions": []
+}
