@@ -1,5 +1,6 @@
+
 {
-  "name": "Teacher Assistant Pro",
-  "description": "A comprehensive student evaluation and management tool for high school teachers, integrating seamlessly with Google Sheets via Apps Script.",
+  "name": "SỔ TAY THẦY THỊNH",
+  "description": "Ứng dụng hỗ trợ giáo viên quản lý và đánh giá học sinh thông minh.",
   "requestFramePermissions": []
 }
