@@ -40,7 +40,7 @@ const App = () => {
   // Fixed: Obtain API key exclusively from the environment variable process.env.API_KEY.
   const checkAiStatus = useCallback(async () => {
     // @ts-ignore
-    const key = process.env.API_KEY;
+    const key = API_KEY;
     if (key && key.length > 10) {
       setIsAiReady(true);
       return;
