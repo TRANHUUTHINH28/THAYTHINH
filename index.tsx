@@ -36,7 +36,7 @@ const App = () => {
 
   const showNotify = (message: string, type: 'success' | 'error') => {
     setNotification({ message, type });
-    setTimeout(() => setNotification(null), 4000);
+    setTimeout(() => setNotification(null), 6000);
   };
 
   const fetchStudents = useCallback(async (url: string, silent = false) => {
@@ -47,10 +47,10 @@ const App = () => {
       const data = await response.json();
       if (Array.isArray(data)) {
         setStudents(data);
-        if (!silent) showNotify('Đồng bộ dữ liệu thành công!', 'success');
+        if (!silent) showNotify('Dữ liệu lớp học đã sẵn sàng!', 'success');
       }
     } catch (error) {
-      if (!silent) showNotify('Lỗi kết nối Sheet. Kiểm tra lại URL.', 'error');
+      if (!silent) showNotify('Lỗi kết nối Google Sheet. Thầy kiểm tra lại Link App Script nhé!', 'error');
     } finally {
       setLoading(false);
     }
@@ -78,7 +78,7 @@ const App = () => {
 
   const saveConfig = () => {
     if (!tempApiUrl.includes('script.google.com')) {
-      showNotify('URL Web App không đúng!', 'error');
+      showNotify('Đường dẫn Google App Script không hợp lệ!', 'error');
       return;
     }
     localStorage.setItem('teacher_app_api_url', tempApiUrl.trim());
@@ -94,22 +94,37 @@ const App = () => {
 
   const generateAiFeedback = async () => {
     if (!currentEval.tenHS) return;
+    
+    // Kiểm tra trực tiếp API_KEY từ môi trường Vercel
+    const apiKey = process.env.API_KEY;
+    
+    if (!apiKey) {
+      showNotify('LỖI: Chưa nhận được API_KEY. Thầy hãy vào tab Deployments trên Vercel và nhấn Redeploy lại bản mới nhất!', 'error');
+      return;
+    }
+
     setIsAiLoading(true);
     try {
-      // Khởi tạo AI trực tiếp từ biến môi trường
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const prompt = `Viết 1 câu nhận xét ngắn dưới 10 chữ cho học sinh "${currentEval.tenHS}", kết quả: "${currentEval.diem || 'tốt'}". Văn phong giáo viên, khích lệ.`;
+      // Khởi tạo AI ngay tại đây để đảm bảo dùng key mới nhất
+      const ai = new GoogleGenAI({ apiKey: apiKey });
+      const prompt = `Viết một câu nhận xét ngắn dưới 10 chữ cho học sinh "${currentEval.tenHS}", kết quả học tập: "${currentEval.diem || 'Tốt'}". Ngôn ngữ giáo viên khích lệ.`;
 
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
         contents: prompt,
       });
 
-      setCurrentEval(prev => ({ ...prev, noiDung: response.text?.trim() || '' }));
-      showNotify('AI đã soạn xong!', 'success');
+      const text = response.text?.trim() || 'Học sinh có tinh thần học tập tốt.';
+      setCurrentEval(prev => ({ ...prev, noiDung: text }));
+      showNotify('AI đã soạn nhận xét thành công!', 'success');
     } catch (error: any) {
-      console.error(error);
-      showNotify('Lỗi: Thầy hãy nhấn Redeploy trên Vercel để kích hoạt mã API.', 'error');
+      console.error("AI Error:", error);
+      const msg = error.toString();
+      if (msg.includes('403') || msg.includes('key')) {
+        showNotify('Mã API của thầy bị sai hoặc đã hết hạn. Hãy lấy mã mới từ AI Studio.', 'error');
+      } else {
+        showNotify('Lỗi kết nối AI. Thầy hãy thử lại sau vài giây nhé.', 'error');
+      }
     } finally {
       setIsAiLoading(false);
     }
@@ -124,10 +139,10 @@ const App = () => {
         mode: 'no-cors',
         body: JSON.stringify(currentEval)
       });
-      showNotify('Đã gửi dữ liệu thành công!', 'success');
-      setTimeout(() => setModalOpen(false), 800);
+      showNotify('Đã lưu vào Google Sheet thành công!', 'success');
+      setTimeout(() => setModalOpen(false), 1000);
     } catch (error) {
-      showNotify('Lỗi lưu dữ liệu.', 'error');
+      showNotify('Lỗi khi lưu dữ liệu. Thầy kiểm tra lại mạng nhé!', 'error');
     } finally {
       setSubmitting(false);
     }
@@ -136,18 +151,19 @@ const App = () => {
   if (isConfiguring) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
-        <div className="max-w-md w-full bg-white rounded-[2.5rem] shadow-2xl p-10 space-y-6 text-center">
-          <div className="text-5xl">🏫</div>
-          <h1 className="text-2xl font-black italic uppercase">{APP_NAME}</h1>
+        <div className="max-w-md w-full bg-white rounded-[2.5rem] shadow-2xl p-10 space-y-6 text-center animate-in zoom-in-95 duration-500 border border-slate-100">
+          <div className="text-6xl mb-2">🏫</div>
+          <h1 className="text-2xl font-black italic uppercase text-slate-900 tracking-tighter">{APP_NAME}</h1>
+          <p className="text-[11px] text-slate-400 font-bold uppercase tracking-[0.2em]">Cấu hình dữ liệu Google Sheet</p>
           <input 
             type="text" 
-            placeholder="Dán link App Script vào đây..." 
+            placeholder="Dán link App Script của thầy vào đây..." 
             value={tempApiUrl}
             onChange={(e) => setTempApiUrl(e.target.value)}
-            className="w-full px-6 py-4 bg-slate-50 border-2 rounded-2xl outline-none focus:border-blue-500 text-sm font-mono"
+            className="w-full px-6 py-5 bg-slate-50 border-2 border-slate-100 rounded-2xl outline-none focus:border-blue-500 text-xs font-mono transition-all"
           />
-          <button onClick={saveConfig} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black shadow-lg hover:bg-blue-700 active:scale-95 transition-all">
-            KẾT NỐI NGAY 🚀
+          <button onClick={saveConfig} className="w-full py-5 bg-blue-600 text-white rounded-2xl font-black shadow-lg shadow-blue-100 hover:bg-blue-700 active:scale-[0.98] transition-all uppercase tracking-widest text-sm">
+            KẾT NỐI DỮ LIỆU 🚀
           </button>
         </div>
       </div>
@@ -155,63 +171,90 @@ const App = () => {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 pb-20 font-sans">
+    <div className="min-h-screen bg-[#F8FAFC] pb-24 font-sans selection:bg-blue-100">
       {notification && (
-        <div className={`fixed top-6 left-1/2 -translate-x-1/2 z-[100] px-6 py-4 rounded-2xl shadow-2xl border-b-4 bg-white transform transition-all animate-in slide-in-from-top-10 ${
+        <div className={`fixed top-8 left-1/2 -translate-x-1/2 z-[100] px-8 py-5 rounded-2xl shadow-2xl border-b-4 bg-white transform transition-all animate-in slide-in-from-top-12 duration-500 max-w-[90vw] ${
           notification.type === 'success' ? 'border-blue-500 text-blue-800' : 'border-rose-500 text-rose-800'
         }`}>
-          <div className="flex items-center gap-3 font-black text-xs uppercase">
-            <span>{notification.type === 'success' ? '✅' : '❌'}</span>
+          <div className="flex items-center gap-4 font-black text-xs uppercase tracking-tight leading-relaxed">
+            <span className="text-xl">{notification.type === 'success' ? '✅' : '❌'}</span>
             <span>{notification.message}</span>
           </div>
         </div>
       )}
 
-      <header className="bg-white border-b sticky top-0 z-40 px-6 py-4 flex items-center justify-between">
-        <h1 className="text-xl font-black bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent italic uppercase tracking-tighter">
-          {APP_NAME}
-        </h1>
-        <div className="flex gap-2">
-          <button onClick={() => fetchStudents(apiUrl)} className="p-3 text-blue-600 hover:bg-blue-50 rounded-xl">🔄</button>
-          <button onClick={() => setIsConfiguring(true)} className="p-3 text-slate-400 hover:bg-slate-100 rounded-xl">⚙️</button>
+      <header className="bg-white/90 backdrop-blur-xl border-b border-slate-100 sticky top-0 z-40 px-8 py-5 flex items-center justify-between shadow-sm">
+        <div>
+          <h1 className="text-2xl font-black bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent italic uppercase tracking-tighter leading-none">
+            {APP_NAME}
+          </h1>
+          <div className="flex items-center gap-1.5 mt-1">
+            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></div>
+            <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">Hệ thống đang trực tuyến</span>
+          </div>
+        </div>
+        <div className="flex gap-3">
+          <button onClick={() => fetchStudents(apiUrl)} className="p-3.5 text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-2xl transition-all active:scale-90">
+            <span className="text-lg">🔄</span>
+          </button>
+          <button onClick={() => setIsConfiguring(true)} className="p-3.5 text-slate-400 bg-slate-50 hover:bg-slate-100 rounded-2xl transition-all active:scale-90">
+            <span className="text-lg">⚙️</span>
+          </button>
         </div>
       </header>
 
-      <main className="max-w-4xl mx-auto px-4 mt-8">
-        <div className="bg-white p-6 rounded-[2rem] shadow-sm border mb-8 flex flex-col sm:flex-row gap-4 items-center justify-center">
-            <div className="flex bg-slate-100 p-1.5 rounded-2xl">
+      <main className="max-w-5xl mx-auto px-6 mt-10">
+        <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 mb-10 flex flex-col md:flex-row gap-6 items-center justify-between">
+            <div className="flex bg-slate-50 p-2 rounded-2xl border border-slate-100">
               {['10', '11', '12'].map(grade => (
-                <button key={grade} onClick={() => { setSelectedGrade(grade); setSelectedClass(''); }} className={`px-6 py-2 rounded-xl font-black text-xs transition-all ${selectedGrade === grade ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400'}`}>
+                <button 
+                  key={grade} 
+                  onClick={() => { setSelectedGrade(grade); setSelectedClass(''); }} 
+                  className={`px-8 py-3 rounded-xl font-black text-xs transition-all uppercase tracking-wider ${selectedGrade === grade ? 'bg-white text-blue-600 shadow-md ring-1 ring-slate-100' : 'text-slate-400 hover:text-slate-600'}`}
+                >
                   KHỐI {grade}
                 </button>
               ))}
             </div>
-            <select value={selectedClass} onChange={(e) => setSelectedClass(e.target.value)} className="w-full sm:w-48 bg-slate-50 border-2 rounded-2xl px-4 py-2 font-black text-xs uppercase outline-none focus:border-blue-500">
-              <option value="">-- CHỌN LỚP --</option>
-              {classes.map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
+            
+            <div className="relative w-full md:w-64">
+              <select 
+                value={selectedClass} 
+                onChange={(e) => setSelectedClass(e.target.value)} 
+                className="w-full bg-slate-50 border-2 border-slate-50 rounded-2xl px-6 py-3.5 font-black text-xs uppercase outline-none focus:border-blue-500 transition-all appearance-none cursor-pointer"
+              >
+                <option value="">-- CHỌN LỚP --</option>
+                {classes.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+              <div className="absolute right-6 top-1/2 -translate-y-1/2 pointer-events-none text-slate-300">▼</div>
+            </div>
         </div>
 
-        <div className="space-y-6">
+        <div className="space-y-10">
           {loading ? (
-            <div className="text-center py-20 text-slate-300 font-black text-xs uppercase animate-pulse">Đang tải dữ liệu...</div>
+            <div className="flex flex-col items-center justify-center py-32 gap-6">
+               <div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+               <div className="text-slate-300 font-black text-[10px] uppercase tracking-[0.3em]">Đang tải danh sách...</div>
+            </div>
           ) : selectedClass ? (
             Object.keys(groupedStudents).sort().map(group => (
-              <div key={group} className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-                <div className="flex items-center gap-3 mb-4 pl-2 font-black text-[10px] text-blue-600 uppercase tracking-widest">
-                  <span>NHÓM {group}</span>
-                  <div className="h-px flex-1 bg-slate-200/50"></div>
+              <div key={group} className="animate-in fade-in slide-in-from-bottom-6 duration-700">
+                <div className="flex items-center gap-4 mb-6 px-2">
+                  <span className="font-black text-[11px] text-blue-600 uppercase tracking-[0.2em] whitespace-nowrap">NHÓM {group}</span>
+                  <div className="h-[2px] flex-1 bg-gradient-to-r from-blue-50 to-transparent"></div>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
                   {groupedStudents[group].map((s, i) => (
-                    <div key={i} className="bg-white p-5 rounded-[1.5rem] border shadow-sm flex justify-between items-center group hover:border-blue-500 transition-all">
-                      <div>
-                        <p className="font-black text-slate-900 uppercase tracking-tight">{s.tenHS}</p>
-                        <p className="text-[9px] font-bold text-slate-300 uppercase">Lớp: {s.lop} • Nhóm: {s.nhom}</p>
+                    <div key={i} className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm flex flex-col justify-between group hover:border-blue-500 hover:shadow-2xl hover:shadow-blue-500/10 transition-all duration-300">
+                      <div className="mb-6">
+                        <p className="font-black text-slate-900 text-lg uppercase tracking-tight group-hover:text-blue-600 transition-colors">{s.tenHS}</p>
+                        <div className="flex gap-2 mt-1">
+                           <span className="text-[8px] font-bold text-slate-300 uppercase bg-slate-50 px-2 py-0.5 rounded-md">Nhóm: {s.nhom}</span>
+                        </div>
                       </div>
-                      <div className="flex gap-1">
-                        <button onClick={() => openEvaluation(s, 'Trước Buổi')} className="w-10 h-10 flex items-center justify-center bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-600 hover:text-white transition-all font-black text-[10px]">TR</button>
-                        <button onClick={() => openEvaluation(s, 'Sau Buổi')} className="w-10 h-10 flex items-center justify-center bg-emerald-50 text-emerald-600 rounded-xl hover:bg-emerald-600 hover:text-white transition-all font-black text-[10px]">SAU</button>
+                      <div className="flex gap-2 w-full">
+                        <button onClick={() => openEvaluation(s, 'Trước Buổi')} className="flex-1 h-12 flex items-center justify-center bg-blue-50 text-blue-600 rounded-[1rem] hover:bg-blue-600 hover:text-white transition-all font-black text-[10px] uppercase tracking-widest shadow-sm">Trước</button>
+                        <button onClick={() => openEvaluation(s, 'Sau Buổi')} className="flex-1 h-12 flex items-center justify-center bg-emerald-50 text-emerald-600 rounded-[1rem] hover:bg-emerald-600 hover:text-white transition-all font-black text-[10px] uppercase tracking-widest shadow-sm">Sau</button>
                       </div>
                     </div>
                   ))}
@@ -219,35 +262,64 @@ const App = () => {
               </div>
             ))
           ) : (
-            <div className="text-center py-20 opacity-20 font-black text-sm italic">Vui lòng chọn lớp học</div>
+            <div className="text-center py-32 opacity-10">
+               <div className="text-9xl mb-6 grayscale">📓</div>
+               <p className="font-black text-xl italic uppercase tracking-widest text-slate-400">Chọn lớp để bắt đầu</p>
+            </div>
           )}
         </div>
       </main>
 
       {modalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
-          <div className="bg-white w-full max-w-md rounded-[2.5rem] shadow-2xl p-8 animate-in zoom-in-95 relative">
-             <button onClick={() => setModalOpen(false)} className="absolute top-6 right-8 text-slate-300 hover:text-slate-500 text-3xl">×</button>
-            <div className="mb-6">
-                <span className={`px-3 py-1 rounded-full text-[9px] font-black text-white uppercase ${currentEval.loai === 'Trước Buổi' ? 'bg-blue-600' : 'bg-emerald-600'}`}>{currentEval.loai}</span>
-                <h2 className="text-2xl font-black text-slate-900 uppercase mt-2 italic tracking-tighter">{currentEval.tenHS}</h2>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-slate-950/40 backdrop-blur-md animate-in fade-in duration-300">
+          <div className="bg-white w-full max-w-lg rounded-[3.5rem] shadow-2xl p-10 animate-in zoom-in-95 duration-400 relative">
+             <button onClick={() => setModalOpen(false)} className="absolute top-8 right-10 text-slate-300 hover:text-slate-500 text-4xl font-light">×</button>
+            
+            <div className="mb-8">
+                <span className={`px-5 py-2 rounded-full text-[10px] font-black text-white uppercase tracking-widest shadow-lg ${currentEval.loai === 'Trước Buổi' ? 'bg-blue-600 shadow-blue-100' : 'bg-emerald-600 shadow-emerald-100'}`}>{currentEval.loai}</span>
+                <h2 className="text-3xl font-black text-slate-900 uppercase mt-5 italic tracking-tighter leading-none">{currentEval.tenHS}</h2>
             </div>
-            <div className="space-y-4">
-              <div className="space-y-1">
-                 <label className="text-[9px] font-black text-slate-400 uppercase ml-1">Điểm / Trạng thái</label>
-                 <input type="text" placeholder="Ví dụ: 9.5, Tốt, Vắng..." className="w-full px-5 py-4 bg-slate-50 border-2 rounded-2xl focus:border-blue-500 outline-none font-black text-blue-600 uppercase" value={currentEval.diem} onChange={(e) => setCurrentEval({...currentEval, diem: e.target.value})} />
-              </div>
+
+            <div className="space-y-6">
               <div className="space-y-2">
-                <div className="flex justify-between items-center">
-                  <span className="text-[9px] font-bold text-slate-400 uppercase">Nhận xét</span>
-                  <button onClick={generateAiFeedback} disabled={isAiLoading} className="text-[10px] font-black px-3 py-1.5 rounded-full bg-blue-50 text-blue-600 hover:bg-blue-100 flex items-center gap-1">
-                    {isAiLoading ? <span className="w-3 h-3 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></span> : '✨'} AI SOẠN NHANH
+                 <label className="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-[0.2em]">Xếp loại / Điểm số</label>
+                 <input 
+                  type="text" 
+                  placeholder="Ví dụ: Tốt, 9.5, Vắng..." 
+                  className="w-full px-8 py-5 bg-slate-50 border-2 border-slate-50 rounded-[1.8rem] focus:border-blue-500 outline-none font-black text-blue-600 text-2xl uppercase transition-all shadow-inner" 
+                  value={currentEval.diem} 
+                  onChange={(e) => setCurrentEval({...currentEval, diem: e.target.value})} 
+                />
+              </div>
+
+              <div className="space-y-3">
+                <div className="flex justify-between items-center px-2">
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Lời nhận xét</span>
+                  <button 
+                    onClick={generateAiFeedback} 
+                    disabled={isAiLoading} 
+                    className={`text-[10px] font-black px-5 py-2.5 rounded-full flex items-center gap-2.5 transition-all shadow-sm ${isAiLoading ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'}`}
+                  >
+                    {isAiLoading ? <span className="w-3.5 h-3.5 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin"></span> : '✨'} AI SOẠN NHANH
                   </button>
                 </div>
-                <textarea rows={3} className="w-full px-5 py-4 bg-slate-50 border-2 rounded-2xl focus:border-blue-500 outline-none text-sm font-medium resize-none shadow-inner" value={currentEval.noiDung} onChange={(e) => setCurrentEval({...currentEval, noiDung: e.target.value})} />
+                <textarea 
+                  rows={4} 
+                  placeholder="Nhập nội dung hoặc dùng AI soạn nhanh..." 
+                  className="w-full px-8 py-6 bg-slate-50 border-2 border-slate-50 rounded-[2rem] focus:border-blue-500 outline-none text-sm font-semibold leading-relaxed resize-none shadow-inner transition-all" 
+                  value={currentEval.noiDung} 
+                  onChange={(e) => setCurrentEval({...currentEval, noiDung: e.target.value})} 
+                />
               </div>
-              <button onClick={submitEvaluation} disabled={submitting} className="w-full py-5 bg-slate-900 text-white rounded-2xl font-black shadow-xl hover:bg-black active:scale-95 transition-all uppercase">
-                {submitting ? 'ĐANG LƯU...' : 'Lưu vào sổ tay 🚀'}
+
+              <button 
+                onClick={submitEvaluation} 
+                disabled={submitting} 
+                className="w-full py-6 bg-slate-900 text-white rounded-[1.8rem] font-black shadow-2xl hover:bg-black active:scale-[0.97] transition-all uppercase tracking-[0.3em] mt-2 flex justify-center items-center gap-3"
+              >
+                {submitting ? (
+                  <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span> ĐANG LƯU...</>
+                ) : 'HOÀN TẤT GHI SỔ 🚀'}
               </button>
             </div>
           </div>
