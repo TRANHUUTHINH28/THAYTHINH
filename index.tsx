@@ -35,6 +35,7 @@ const App = () => {
   const [isAiLoading, setIsAiLoading] = useState<boolean>(false);
   const [notification, setNotification] = useState<{message: string, type: 'success' | 'error'} | null>(null);
   const [showApiKey, setShowApiKey] = useState<boolean>(false);
+  const [lastAiCallTime, setLastAiCallTime] = useState<number>(0);
 
   const isAiReady = useMemo(() => {
     return geminiApiKey.length > 20; // API key Google thường dài hơn 20 ký tự
@@ -118,7 +119,18 @@ const App = () => {
       return;
     }
 
+    // Kiểm tra rate limit: tối thiểu 4 giây giữa các lần gọi (tránh vượt 15 requests/phút)
+    const now = Date.now();
+    const timeSinceLastCall = now - lastAiCallTime;
+    if (timeSinceLastCall < 4000) {
+      const waitTime = Math.ceil((4000 - timeSinceLastCall) / 1000);
+      showNotify(`Vui lòng đợi ${waitTime} giây nữa để tránh quá tải!`, 'error');
+      return;
+    }
+
     setIsAiLoading(true);
+    setLastAiCallTime(now);
+    
     try {
       const ai = new GoogleGenAI({ apiKey: geminiApiKey });
       
@@ -136,8 +148,8 @@ const App = () => {
       console.error("AI Error:", error);
       if (error.message?.includes("API_KEY_INVALID") || error.message?.includes("API key not valid")) {
         showNotify('API Key không hợp lệ! Vui lòng kiểm tra lại.', 'error');
-      } else if (error.message?.includes("quota")) {
-        showNotify('Đã hết quota API! Vui lòng kiểm tra tài khoản Google Cloud.', 'error');
+      } else if (error.message?.includes("quota") || error.message?.includes("429")) {
+        showNotify('Đã vượt giới hạn 15 lần/phút. Thầy đợi 1 phút nhé!', 'error');
       } else {
         showNotify('AI đang bận, thầy thử lại sau nhé!', 'error');
       }
