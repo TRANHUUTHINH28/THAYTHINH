@@ -36,8 +36,12 @@ const App = () => {
   const [showApiKey, setShowApiKey] = useState<boolean>(false);
   const [lastAiCallTime, setLastAiCallTime] = useState<number>(0);
 
+  const isConfigKeyValid = useMemo(() => {
+    return tempGeminiKey && tempGeminiKey.trim().length >= 30 && tempGeminiKey.trim().startsWith('AIza');
+  }, [tempGeminiKey]);
+
   const isAiReady = useMemo(() => {
-    return geminiApiKey.length > 20; // API key Google thường dài hơn 20 ký tự
+    return geminiApiKey && geminiApiKey.trim().length >= 30 && geminiApiKey.trim().startsWith('AIza');
   }, [geminiApiKey]);
 
   const showNotify = (message: string, type: 'success' | 'error') => {
@@ -86,13 +90,13 @@ const App = () => {
     const cleanUrl = tempApiUrl.trim();
     const cleanKey = tempGeminiKey.trim();
     
-    if (!cleanUrl.includes('script.google.com')) {
+    if (!cleanUrl || !cleanUrl.includes('script.google.com')) {
       showNotify('Link App Script không hợp lệ!', 'error');
       return;
     }
     
-    if (!cleanKey || cleanKey.length < 20) {
-      showNotify('API Key không hợp lệ! Cần ít nhất 20 ký tự.', 'error');
+    if (!cleanKey || cleanKey.length < 30 || !cleanKey.startsWith('AIza')) {
+      showNotify('API Key không hợp lệ! Key phải bắt đầu bằng "AIza" và dài ít nhất 30 ký tự.', 'error');
       return;
     }
     
@@ -254,12 +258,19 @@ const App = () => {
               <p className="text-[9px] text-slate-400 mt-2 italic px-2">
                 * Lấy API Key tại: <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-blue-500 underline">aistudio.google.com/app/apikey</a>
               </p>
-              <div className={`mt-3 px-4 py-3 rounded-xl border-2 ${isAiReady ? 'bg-emerald-50 border-emerald-200' : 'bg-amber-50 border-amber-200'}`}>
+              <div className={`mt-3 px-4 py-3 rounded-xl border-2 ${isConfigKeyValid ? 'bg-emerald-50 border-emerald-200' : 'bg-amber-50 border-amber-200'}`}>
                 <div className="flex items-center gap-3">
-                  <span className="text-lg">{isAiReady ? '✅' : '⚠️'}</span>
-                  <span className={`text-[10px] font-black uppercase tracking-tight ${isAiReady ? 'text-emerald-700' : 'text-amber-700'}`}>
-                    {isAiReady ? 'API Key hợp lệ' : 'Chưa nhập API Key'}
-                  </span>
+                  <span className="text-lg">{isConfigKeyValid ? '✅' : '⚠️'}</span>
+                  <div className="flex-1">
+                    <span className={`text-[10px] font-black uppercase tracking-tight block ${isConfigKeyValid ? 'text-emerald-700' : 'text-amber-700'}`}>
+                      {isConfigKeyValid ? 'API Key hợp lệ' : 'API Key phải bắt đầu bằng "AIza" và dài ít nhất 39 ký tự'}
+                    </span>
+                    {tempGeminiKey && (
+                      <span className="text-[9px] text-slate-400 mt-1 block">
+                        Độ dài hiện tại: {tempGeminiKey.trim().length} ký tự
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
