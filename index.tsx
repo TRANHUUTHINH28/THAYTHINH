@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { createRoot } from 'react-dom/client';
-import { GoogleGenAI } from "@google/genai";
 
 const APP_NAME = "SỔ TAY THẦY THỊNH";
 
@@ -132,26 +131,47 @@ const App = () => {
     setLastAiCallTime(now);
     
     try {
-      const ai = new GoogleGenAI({ apiKey: geminiApiKey });
-      
       const prompt = `Bạn là trợ lý của thầy Thịnh. Viết 1 câu nhận xét học tập cực ngắn (dưới 15 chữ) cho học sinh "${currentEval.tenHS}" vừa được chấm điểm/xếp loại là "${currentEval.diem || 'Tốt'}". Ngôn ngữ gần gũi, khích lệ, tích cực.`;
 
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.0-flash-exp',
-        contents: prompt,
+      // Gọi API trực tiếp thay vì dùng SDK
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiApiKey}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          contents: [{
+            parts: [{ text: prompt }]
+          }]
+        })
       });
 
-      const resultText = response.text?.trim() || 'Em làm tốt lắm, cố gắng nhé!';
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(JSON.stringify(data));
+      }
+
+      const resultText = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || 'Em làm tốt lắm, cố gắng nhé!';
       setCurrentEval(prev => ({ ...prev, noiDung: resultText }));
       showNotify('AI đã soạn xong!', 'success');
     } catch (error: any) {
       console.error("AI Error:", error);
-      if (error.message?.includes("API_KEY_INVALID") || error.message?.includes("API key not valid")) {
-        showNotify('API Key không hợp lệ! Vui lòng kiểm tra lại.', 'error');
-      } else if (error.message?.includes("quota") || error.message?.includes("429")) {
-        showNotify('Đã vượt giới hạn 15 lần/phút. Thầy đợi 1 phút nhé!', 'error');
+      
+      // Log chi tiết để debug
+      const errorMsg = error.message || JSON.stringify(error);
+      console.log("Error details:", errorMsg);
+      
+      if (errorMsg.includes("API_KEY_INVALID") || errorMsg.includes("API key not valid") || errorMsg.includes("invalid")) {
+        showNotify('API Key không hợp lệ! Vui lòng tạo key mới.', 'error');
+      } else if (errorMsg.includes("quota") || errorMsg.includes("429") || errorMsg.includes("RESOURCE_EXHAUSTED")) {
+        showNotify('Vượt giới hạn 15 lần/phút. Đợi 1-2 phút hoặc dùng key khác!', 'error');
+      } else if (errorMsg.includes("403") || errorMsg.includes("permission")) {
+        showNotify('Key chưa được kích hoạt. Thử tạo key mới!', 'error');
+      } else if (errorMsg.includes("400")) {
+        showNotify('Lỗi request. Kiểm tra lại model name hoặc key!', 'error');
       } else {
-        showNotify('AI đang bận, thầy thử lại sau nhé!', 'error');
+        showNotify(`Lỗi: ${errorMsg.substring(0, 50)}...`, 'error');
       }
     } finally {
       setIsAiLoading(false);
