@@ -133,25 +133,44 @@ const App = () => {
     try {
       const prompt = `Bạn là trợ lý của thầy Thịnh. Viết 1 câu nhận xét học tập cực ngắn (dưới 15 chữ) cho học sinh "${currentEval.tenHS}" vừa được chấm điểm/xếp loại là "${currentEval.diem || 'Tốt'}". Ngôn ngữ gần gũi, khích lệ, tích cực.`;
 
-      // Gọi API trực tiếp thay vì dùng SDK
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiApiKey}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          contents: [{
-            parts: [{ text: prompt }]
-          }]
-        })
-      });
+      // Thử các models theo thứ tự
+      const models = ['gemini-pro', 'gemini-1.5-flash', 'gemini-1.5-pro'];
+      let response;
+      let lastError;
+      
+      for (const model of models) {
+        try {
+          response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiApiKey}`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              contents: [{
+                parts: [{ text: prompt }]
+              }]
+            })
+          });
+
+          if (response.ok) {
+            break; // Thành công, thoát loop
+          }
+          
+          const errorData = await response.json();
+          lastError = errorData;
+          console.log(`Model ${model} failed:`, errorData);
+        } catch (err) {
+          console.log(`Model ${model} error:`, err);
+          lastError = err;
+        }
+      }
+
+      if (!response || !response.ok) {
+        throw new Error(JSON.stringify(lastError));
+      }
 
       const data = await response.json();
       
-      if (!response.ok) {
-        throw new Error(JSON.stringify(data));
-      }
-
       const resultText = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || 'Em làm tốt lắm, cố gắng nhé!';
       setCurrentEval(prev => ({ ...prev, noiDung: resultText }));
       showNotify('AI đã soạn xong!', 'success');
