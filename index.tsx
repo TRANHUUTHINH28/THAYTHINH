@@ -1,5 +1,7 @@
+
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { createRoot } from 'react-dom/client';
+import { GoogleGenAI } from "@google/genai";
 
 const APP_NAME = "SỔ TAY THẦY THỊNH";
 
@@ -21,28 +23,60 @@ interface EvaluationData {
 const App = () => {
   const [apiUrl, setApiUrl] = useState<string>(localStorage.getItem('teacher_app_api_url') || '');
   const [tempApiUrl, setTempApiUrl] = useState<string>(apiUrl);
-  const [geminiApiKey, setGeminiApiKey] = useState<string>(localStorage.getItem('teacher_app_gemini_key') || '');
-  const [tempGeminiKey, setTempGeminiKey] = useState<string>(geminiApiKey);
   const [students, setStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [selectedGrade, setSelectedGrade] = useState<string>('10');
   const [selectedClass, setSelectedClass] = useState<string>('');
-  const [isConfiguring, setIsConfiguring] = useState<boolean>(!apiUrl || !geminiApiKey);
+  const [isConfiguring, setIsConfiguring] = useState<boolean>(!apiUrl);
   const [modalOpen, setModalOpen] = useState<boolean>(false);
   const [currentEval, setCurrentEval] = useState<Partial<EvaluationData>>({});
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [isAiLoading, setIsAiLoading] = useState<boolean>(false);
   const [notification, setNotification] = useState<{message: string, type: 'success' | 'error'} | null>(null);
-  const [showApiKey, setShowApiKey] = useState<boolean>(false);
-  const [lastAiCallTime, setLastAiCallTime] = useState<number>(0);
+  const [isAiReady, setIsAiReady] = useState<boolean>(false);
 
-  const isConfigKeyValid = useMemo(() => {
-    return tempGeminiKey && tempGeminiKey.trim().length >= 30 && tempGeminiKey.trim().startsWith('AIza');
-  }, [tempGeminiKey]);
+  // Kiểm tra quyền truy cập API Key từ hệ thống
+  const checkAiStatus = useCallback(async () => {
+    try {
+      // @ts-ignore
+      if (window.aistudio) {
+        // @ts-ignore
+        const hasKey = await window.aistudio.hasSelectedApiKey();
+        setIsAiReady(hasKey);
+      } else {
+        // Nếu không có window.aistudio, kiểm tra xem biến process.env có tồn tại không
+        // @ts-ignore
+        const key = process.env.GEMINI_API_KEY;
+        setIsAiReady(!!key && key.length > 5);
+      }
+    } catch (e) {
+      console.error("Status check failed", e);
+    }
+  }, []);
 
-  const isAiReady = useMemo(() => {
-    return geminiApiKey && geminiApiKey.trim().length >= 30 && geminiApiKey.trim().startsWith('AIza');
-  }, [geminiApiKey]);
+  useEffect(() => {
+    checkAiStatus();
+    // Kiểm tra định kỳ để cập nhật trạng thái UI
+    const timer = setInterval(checkAiStatus, 3000);
+    return () => clearInterval(timer);
+  }, [checkAiStatus]);
+
+  const handleAuthAi = async () => {
+    // @ts-ignore
+    if (window.aistudio && typeof window.aistudio.openSelectKey === 'function') {
+      try {
+        // @ts-ignore
+        await window.aistudio.openSelectKey();
+        // Giả định thành công ngay lập tức để kích hoạt UI
+        setIsAiReady(true);
+        showNotify('Đang kết nối với dự án Google...', 'success');
+      } catch (err) {
+        showNotify('Không thể mở trình chọn mã.', 'error');
+      }
+    } else {
+      showNotify('Hệ thống yêu cầu xác thực qua AI Studio.', 'error');
+    }
+  };
 
   const showNotify = (message: string, type: 'success' | 'error') => {
     setNotification({ message, type });
@@ -67,8 +101,8 @@ const App = () => {
   }, []);
 
   useEffect(() => {
-    if (apiUrl && !isConfiguring) fetchStudents(apiUrl, true);
-  }, [apiUrl, isConfiguring, fetchStudents]);
+    if (apiUrl) fetchStudents(apiUrl, true);
+  }, [apiUrl, fetchStudents]);
 
   const classes = useMemo(() => {
     const filtered = students.filter(s => s.khoi === selectedGrade);
@@ -88,25 +122,14 @@ const App = () => {
 
   const saveConfig = () => {
     const cleanUrl = tempApiUrl.trim();
-    const cleanKey = tempGeminiKey.trim();
-    
-    if (!cleanUrl || !cleanUrl.includes('script.google.com')) {
+    if (!cleanUrl.includes('script.google.com')) {
       showNotify('Link App Script không hợp lệ!', 'error');
       return;
     }
-    
-    if (!cleanKey || cleanKey.length < 30 || !cleanKey.startsWith('AIza')) {
-      showNotify('API Key không hợp lệ! Key phải bắt đầu bằng "AIza" và dài ít nhất 30 ký tự.', 'error');
-      return;
-    }
-    
     localStorage.setItem('teacher_app_api_url', cleanUrl);
-    localStorage.setItem('teacher_app_gemini_key', cleanKey);
     setApiUrl(cleanUrl);
-    setGeminiApiKey(cleanKey);
     setIsConfiguring(false);
     fetchStudents(cleanUrl);
-    showNotify('Cấu hình đã lưu thành công!', 'success');
   };
 
   const openEvaluation = (student: Student, type: 'Trước Buổi' | 'Sau Buổi') => {
@@ -117,84 +140,36 @@ const App = () => {
   const generateAiFeedback = async () => {
     if (!currentEval.tenHS) return;
     
+    // Kiểm tra nhanh trước khi gọi
     if (!isAiReady) {
-      showNotify('Chưa có API Key! Vui lòng cấu hình lại.', 'error');
-      return;
-    }
-
-    // Kiểm tra rate limit: tối thiểu 4 giây giữa các lần gọi (tránh vượt 15 requests/phút)
-    const now = Date.now();
-    const timeSinceLastCall = now - lastAiCallTime;
-    if (timeSinceLastCall < 4000) {
-      const waitTime = Math.ceil((4000 - timeSinceLastCall) / 1000);
-      showNotify(`Vui lòng đợi ${waitTime} giây nữa để tránh quá tải!`, 'error');
+      showNotify('Thầy hãy nhấn "MỞ KHÓA AI" ở màn hình chính trước nhé!', 'error');
       return;
     }
 
     setIsAiLoading(true);
-    setLastAiCallTime(now);
-    
     try {
-      const prompt = `Bạn là trợ lý của thầy Thịnh. Viết 1 câu nhận xét học tập cực ngắn (dưới 15 chữ) cho học sinh "${currentEval.tenHS}" vừa được chấm điểm/xếp loại là "${currentEval.diem || 'Tốt'}". Ngôn ngữ gần gũi, khích lệ, tích cực.`;
-
-      // Thử các models theo thứ tự
-      const models = ['gemini-pro', 'gemini-1.5-flash', 'gemini-1.5-pro'];
-      let response;
-      let lastError;
+      // Luôn khởi tạo instance mới để lấy Key từ dialog mới nhất
+      // @ts-ignore
+      const apiKey = process.env.API_KEY;
+      const ai = new GoogleGenAI({ apiKey: apiKey });
       
-      for (const model of models) {
-        try {
-          response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiApiKey}`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              contents: [{
-                parts: [{ text: prompt }]
-              }]
-            })
-          });
+      const prompt = `Bạn là trợ lý của thầy Thịnh. Viết 1 câu nhận xét học tập cực ngắn (dưới 10 chữ) cho học sinh "${currentEval.tenHS}" vừa được chấm điểm/xếp loại là "${currentEval.diem || 'Tốt'}". Ngôn ngữ gần gũi, khích lệ.`;
 
-          if (response.ok) {
-            break; // Thành công, thoát loop
-          }
-          
-          const errorData = await response.json();
-          lastError = errorData;
-          console.log(`Model ${model} failed:`, errorData);
-        } catch (err) {
-          console.log(`Model ${model} error:`, err);
-          lastError = err;
-        }
-      }
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: prompt,
+      });
 
-      if (!response || !response.ok) {
-        throw new Error(JSON.stringify(lastError));
-      }
-
-      const data = await response.json();
-      
-      const resultText = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || 'Em làm tốt lắm, cố gắng nhé!';
+      const resultText = response.text?.trim() || 'Em làm tốt lắm, cố gắng nhé!';
       setCurrentEval(prev => ({ ...prev, noiDung: resultText }));
       showNotify('AI đã soạn xong!', 'success');
     } catch (error: any) {
       console.error("AI Error:", error);
-      
-      // Log chi tiết để debug
-      const errorMsg = error.message || JSON.stringify(error);
-      console.log("Error details:", errorMsg);
-      
-      if (errorMsg.includes("API_KEY_INVALID") || errorMsg.includes("API key not valid") || errorMsg.includes("invalid")) {
-        showNotify('API Key không hợp lệ! Vui lòng tạo key mới.', 'error');
-      } else if (errorMsg.includes("quota") || errorMsg.includes("429") || errorMsg.includes("RESOURCE_EXHAUSTED")) {
-        showNotify('Vượt giới hạn 15 lần/phút. Đợi 1-2 phút hoặc dùng key khác!', 'error');
-      } else if (errorMsg.includes("403") || errorMsg.includes("permission")) {
-        showNotify('Key chưa được kích hoạt. Thử tạo key mới!', 'error');
-      } else if (errorMsg.includes("400")) {
-        showNotify('Lỗi request. Kiểm tra lại model name hoặc key!', 'error');
+      if (error.message?.includes("entity was not found")) {
+        showNotify('Mã API sai hoặc hết hạn. Thầy hãy chọn lại!', 'error');
+        handleAuthAi();
       } else {
-        showNotify(`Lỗi: ${errorMsg.substring(0, 50)}...`, 'error');
+        showNotify('AI đang bận, thầy thử lại sau nhé!', 'error');
       }
     } finally {
       setIsAiLoading(false);
@@ -238,48 +213,25 @@ const App = () => {
             </div>
 
             <div className="space-y-2">
-              <label className="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">2. Google Gemini API Key</label>
-              <div className="relative">
-                <input 
-                  type={showApiKey ? "text" : "password"}
-                  placeholder="AIza..." 
-                  value={tempGeminiKey}
-                  onChange={(e) => setTempGeminiKey(e.target.value)}
-                  className="w-full px-6 py-5 bg-slate-50 border-2 border-slate-100 rounded-2xl outline-none focus:border-blue-500 text-xs font-mono transition-all pr-14"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowApiKey(!showApiKey)}
-                  className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                >
-                  {showApiKey ? '🙈' : '👁️'}
-                </button>
-              </div>
+              <label className="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">2. Xác thực AI (Bắt buộc)</label>
+              <button 
+                onClick={handleAuthAi}
+                className={`w-full flex items-center justify-between px-6 py-5 border-2 rounded-2xl transition-all font-black text-[11px] uppercase tracking-tight ${
+                  isAiReady ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-rose-50 border-rose-200 text-rose-700'
+                }`}
+              >
+                <span>{isAiReady ? '✅ Đã kích hoạt AI' : '🔓 Nhấn để chọn API Key'}</span>
+                <span className="text-lg">{isAiReady ? '✨' : '🗝️'}</span>
+              </button>
               <p className="text-[9px] text-slate-400 mt-2 italic px-2">
-                * Lấy API Key tại: <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-blue-500 underline">aistudio.google.com/app/apikey</a>
+                * Thầy cần chọn dự án đã bật Billing tại <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" className="text-blue-500 underline">ai.google.dev</a>
               </p>
-              <div className={`mt-3 px-4 py-3 rounded-xl border-2 ${isConfigKeyValid ? 'bg-emerald-50 border-emerald-200' : 'bg-amber-50 border-amber-200'}`}>
-                <div className="flex items-center gap-3">
-                  <span className="text-lg">{isConfigKeyValid ? '✅' : '⚠️'}</span>
-                  <div className="flex-1">
-                    <span className={`text-[10px] font-black uppercase tracking-tight block ${isConfigKeyValid ? 'text-emerald-700' : 'text-amber-700'}`}>
-                      {isConfigKeyValid ? 'API Key hợp lệ' : 'API Key phải bắt đầu bằng "AIza" và dài ít nhất 39 ký tự'}
-                    </span>
-                    {tempGeminiKey && (
-                      <span className="text-[9px] text-slate-400 mt-1 block">
-                        Độ dài hiện tại: {tempGeminiKey.trim().length} ký tự
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </div>
             </div>
           </div>
 
           <button 
             onClick={saveConfig} 
-            disabled={!tempApiUrl || !tempGeminiKey}
-            className="w-full py-5 bg-slate-950 text-white rounded-2xl font-black shadow-xl hover:bg-black transition-all uppercase tracking-[0.2em] text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full py-5 bg-slate-950 text-white rounded-2xl font-black shadow-xl hover:bg-black transition-all uppercase tracking-[0.2em] text-sm"
           >
             LƯU VÀ VÀO SỔ 🚀
           </button>
@@ -306,12 +258,12 @@ const App = () => {
           <h1 className="text-2xl font-black bg-gradient-to-r from-blue-700 to-indigo-600 bg-clip-text text-transparent italic uppercase tracking-tighter leading-none">
             {APP_NAME}
           </h1>
-          <div className="flex items-center gap-2 mt-2">
+          <button onClick={handleAuthAi} className="flex items-center gap-2 mt-2 group">
             <div className={`w-2.5 h-2.5 rounded-full ${isAiReady ? 'bg-emerald-500 shadow-[0_0_10px_#10b981]' : 'bg-rose-500 shadow-[0_0_10px_#f43f5e] animate-pulse'}`}></div>
-            <span className={`text-[10px] font-black uppercase tracking-widest ${isAiReady ? 'text-emerald-600' : 'text-rose-600'}`}>
-              {isAiReady ? 'AI ONLINE' : 'AI OFFLINE'}
+            <span className={`text-[10px] font-black uppercase tracking-widest transition-colors ${isAiReady ? 'text-emerald-600' : 'text-rose-600 group-hover:text-rose-800'}`}>
+              {isAiReady ? 'AI ONLINE' : 'AI OFFLINE (BẤM ĐỂ MỞ 🔓)'}
             </span>
-          </div>
+          </button>
         </div>
         <div className="flex gap-3">
           <button onClick={() => fetchStudents(apiUrl)} className="w-12 h-12 flex items-center justify-center text-blue-600 bg-blue-50 hover:bg-blue-600 hover:text-white rounded-xl transition-all shadow-sm">
@@ -386,9 +338,9 @@ const App = () => {
                   <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Lời nhận xét</span>
                   <button 
                     onClick={generateAiFeedback} 
-                    disabled={isAiLoading || !isAiReady} 
+                    disabled={isAiLoading} 
                     className={`text-[10px] font-black px-6 py-3 rounded-full flex items-center gap-3 transition-all ${
-                        isAiLoading || !isAiReady ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-xl shadow-indigo-100 active:scale-95'
+                        isAiLoading ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-xl shadow-indigo-100 active:scale-95'
                     }`}
                   >
                     {isAiLoading ? <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span> : '✨ AI SOẠN NHANH'}
