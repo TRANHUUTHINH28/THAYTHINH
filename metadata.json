@@ -1,5 +1,5 @@
 {
-  "name": "SỔ TAY THẦY THỊNH",
-  "description": "Ứng dụng hỗ trợ giáo viên quản lý và đánh giá học sinh thông minh.",
+  "name": "Virtual Physics Lab: Current Balance (Cân dòng điện)",
+  "description": "A high-fidelity physics simulation for measuring magnetic induction B using a current balance, featuring realistic error modeling, dynamic SVG visuals, and guided experimental procedures.",
   "requestFramePermissions": []
 }
